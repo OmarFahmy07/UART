@@ -1,39 +1,45 @@
-module Parity_Calc(
-  input wire rst,
-  input wire [7:0] data_in,
-  input wire load,
-  input wire type,
-  output reg parity_result
-  );
-  
-  localparam  EVEN_PARITY = 1'b0,
-              ODD_PARITY  = 1'b1;
-  
-  reg [7:0] temp_reg;
-              
-  // The load signal let the parity calculator block know when to capture the data on its input data line.
-  always@(posedge load or negedge rst)
+module Parity_Calc(input wire rst,
+                   input wire clk,
+                   input wire [7:0] data_in,
+                   input wire load,
+                   input wire type,
+                   output reg parity_result);
+    
+    localparam  EVEN_PARITY = 1'b0,
+    ODD_PARITY = 1'b1;
+    
+    reg parity_result_comb;
+    
+    always @(posedge clk or negedge rst)
     begin
-      if(!rst)
+        if (!rst)
         begin
-          temp_reg <= 'd0;
+            parity_result <= 1'b0;
         end
-      else
+        else
         begin
-          temp_reg <= data_in;
+            parity_result <= parity_result_comb;
         end
     end
-              
-  always@(*)
+    
+    always@(*)
     begin
-      if(type == EVEN_PARITY)
+        // The load signal lets the parity calculator block know when to process the data on its input data line.
+        if (load)
         begin
-          parity_result = ^(temp_reg);
+            if (type == EVEN_PARITY)
+            begin
+                parity_result_comb = ^(data_in);
+            end
+            else
+            begin
+                parity_result_comb = ~(^(data_in));
+            end
         end
-      else
+        else
         begin
-          parity_result = ~(^(temp_reg));
+            parity_result_comb = parity_result;
         end
     end
-  
+    
 endmodule
