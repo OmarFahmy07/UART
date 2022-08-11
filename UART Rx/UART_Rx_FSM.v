@@ -12,9 +12,7 @@ module UART_Rx_FSM (input wire clock,
                     output wire deserializer_en,
                     output wire start_check_en,
                     output wire parity_check_en,
-                    output wire parity_check_load,
                     output wire stop_check_en,
-                    output wire stop_check_load,
                     output reg data_valid);
     
     // States encoding - gray encode is used to reduce switching power
@@ -26,8 +24,8 @@ module UART_Rx_FSM (input wire clock,
     localparam OUTPUT = 3'b100;
     
     reg [2:0] current_state, next_state;
-    
-    wire [5:0] third_sample_edge, stable_sampled_value_edge;
+    reg data_valid_comb;
+    wire [5:0] third_sample_edge;
     
     // Current state sequential logic
     always @(posedge clock or negedge reset)
@@ -39,6 +37,19 @@ module UART_Rx_FSM (input wire clock,
         else
         begin
             current_state <= next_state;
+        end
+    end
+    
+    // Data valid flag sequential logic
+    always @(posedge clock or negedge reset)
+    begin
+        if (!reset)
+        begin
+            data_valid <= 1'b0;
+        end
+        else
+        begin
+            data_valid <= data_valid_comb;
         end
     end
     
@@ -57,7 +68,7 @@ module UART_Rx_FSM (input wire clock,
                 end
                 else
                 begin
-                    next_state = current_state;
+                    next_state = IDLE;
                 end
             end
             START:
@@ -66,7 +77,7 @@ module UART_Rx_FSM (input wire clock,
                  should then tell you whether it is a true start bit or just a glitch. If it was a glitch,
                  return immediately after detecting the glitch to the idle state. Otherwise, it is a true
                  start bit and hence wait for the whole Tx clock cycle and then go to the DATA state. */
-                if ((edge_counter == third_sample_edge) && start_glitch)
+                if ((edge_counter == (third_sample_edge + 1'b1)) && start_glitch)
                 begin
                     next_state = IDLE;
                 end
@@ -76,7 +87,7 @@ module UART_Rx_FSM (input wire clock,
                 end
                 else
                 begin
-                    next_state = current_state;
+                    next_state = START;
                 end
             end
             DATA:
@@ -96,7 +107,7 @@ module UART_Rx_FSM (input wire clock,
                 end
                 else
                 begin
-                    next_state = current_state;
+                    next_state = DATA;
                 end
             end
             PARITY:
@@ -108,7 +119,7 @@ module UART_Rx_FSM (input wire clock,
                 end
                 else
                 begin
-                    next_state = current_state;
+                    next_state = PARITY;
                 end
             end
             STOP:
@@ -147,34 +158,34 @@ module UART_Rx_FSM (input wire clock,
      are 0 and hence data valid is high. This output is active for 1 Rx clock cycle */
     always@(*)
     begin
-        if (current_state == OUTPUT)
+        if (next_state == OUTPUT)
         begin
             if (parity_en)
             begin
                 if (!parity_error && !stop_error)
                 begin
-                    data_valid = 1'b1;
+                    data_valid_comb = 1'b1;
                 end
                 else
                 begin
-                    data_valid = 1'b0;
+                    data_valid_comb = 1'b0;
                 end
             end
             else
             begin
                 if (!stop_error)
                 begin
-                    data_valid = 1'b1;
+                    data_valid_comb = 1'b1;
                 end
                 else
                 begin
-                    data_valid = 1'b0;
+                    data_valid_comb = 1'b0;
                 end
             end
         end
         else
         begin
-            data_valid = 1'b0;
+            data_valid_comb = 1'b0;
         end
     end
     
@@ -185,7 +196,7 @@ module UART_Rx_FSM (input wire clock,
     /* Deserializer is used to extract data bits, so it should be enabled only in the DATA state.
      Moreover, it should be enabled only after the data sampling block's output has stabilized so that the
      deserializer block takes in the correct sample of the data bits */
-    assign deserializer_en = ((current_state == DATA) && (edge_counter == stable_sampled_value_edge)) ? 1'b1 : 1'b0;
+    assign deserializer_en = ((current_state == DATA) && (edge_counter == third_sample_edge)) ? 1'b1 : 1'b0;
     
     /* The start check block is used to check that a detected start bit is valid. Enable the start check
      block after the data sampling block has successfully sampled the start bit so that the start check
@@ -193,21 +204,15 @@ module UART_Rx_FSM (input wire clock,
     assign start_check_en = ((current_state == START) && (edge_counter == third_sample_edge)) ? 1'b1 : 1'b0;
     
     /* Parity check block is used to compute the parity of the received data byte and compare it with the
-     parity bit in the frame. The parity error signal is observed in the OUTPUT state, so the parity check
-     block should be enabled in the OUTPUT state. */
-    assign parity_check_en = (current_state == OUTPUT) ? 1'b1 : 1'b0 ;
+     parity bit in the frame. Enable the parity check block after the data sampling block has successfully
+     sampled the parity bit so that the parity check block takes in the correct sample of the parity bit
+     */
+    assign parity_check_en = ((current_state == PARITY) && (edge_counter == third_sample_edge)) ? 1'b1 : 1'b0;
     
-    /* Stop check block is used to check that a detected stop bit is valid. The stop error signal is
-     observed in the OUTPUT state, so the stop check block should be enabled in the OUTPUT state. */
-    assign stop_check_en = (current_state == OUTPUT) ? 1'b1 : 1'b0 ;
-    
-    /* The parity check block should be loaded after the data sampling block's output has stabilized so
-     that the parity check block takes in the correct sample of the parity bit */
-    assign parity_check_load = ((current_state == PARITY) && (edge_counter == stable_sampled_value_edge)) ? 1'b1 : 1'b0;
-    
-    /* The stop check block should be loaded after the data sampling block's output has stabilized so
-     that the stop check block takes in the correct sample of the stop bit */
-    assign stop_check_load = ((current_state == STOP) && (edge_counter == stable_sampled_value_edge)) ? 1'b1 : 1'b0;
+    /* Stop check block is used to check that a detected stop bit is valid. Enable the stop check block
+     after the data sampling block has successfully sampled the stop bit so that the stop check block
+     takes in the correct sample of the stop bit */
+    assign stop_check_en = ((current_state == STOP) && (edge_counter == third_sample_edge)) ? 1'b1 : 1'b0;
     
     /* The data sampler block takes 3 samples at the 3 middle clock edges of a Tx clock cycle. The third
      edge at which the sampler takes the third sample is frequently needed in the code since the output of
@@ -216,13 +221,5 @@ module UART_Rx_FSM (input wire clock,
      add 1. Instead of dividing by 2, we will use shifting in order to save area since a divider consumes
      large area. */
     assign third_sample_edge = (prescale >> 1) + 'd1;
-    
-    /* The data sampler block takes 3 samples at the 3 middle clock edges of a Tx clock cycle. The fourth
-     edge at which the sampler's output is ready is frequently needed in the code since the output of
-     the sampler is stable at this edge, so a dedicated assign statement is used to shorten the code and
-     make it more readable. That fourth edge is obtained by simply dividing the "prescale" value by 2 then
-     add 1. Instead of dividing by 2, we will use shifting in order to save area since a divider consumes
-     large area. */
-    assign stable_sampled_value_edge = (prescale >> 1) + 'd2;
     
 endmodule

@@ -13,7 +13,6 @@ module UART_Rx(input wire RX_IN,
     wire [5:0] edge_counter;
     wire start_glitch;
     wire counter_en, deserializer_en, start_check_en, parity_check_en, stop_check_en;
-    wire parity_check_load, stop_check_load;
     wire sampler_output;
     
     UART_Rx_FSM U0_FSM (
@@ -31,9 +30,7 @@ module UART_Rx(input wire RX_IN,
     .deserializer_en(deserializer_en),
     .start_check_en(start_check_en),
     .parity_check_en(parity_check_en),
-    .parity_check_load(parity_check_load),
     .stop_check_en(stop_check_en),
-    .stop_check_load(stop_check_load),
     .data_valid(data_valid));
     
     data_sampling U1_Sampler(
@@ -45,6 +42,7 @@ module UART_Rx(input wire RX_IN,
     .data_out(sampler_output));
     
     deserializer U2_Deserializer(
+    .clock(CLK),
     .enable(deserializer_en),
     .reset(RST),
     .data_in(sampler_output),
@@ -62,12 +60,14 @@ module UART_Rx(input wire RX_IN,
     .reset(RST),
     .data_in(P_DATA),
     .parity_bit(sampler_output),
+    .clock(CLK),
     .enable(parity_check_en),
-    .load(parity_check_load),
     .parity_type(PAR_TYP),
     .parity_error(PAR_ERR));
     
     start_check U5_Start(
+    .clock(CLK),
+    .reset(RST),
     .data_in(sampler_output),
     .enable(start_check_en),
     .glitch(start_glitch));
@@ -75,7 +75,7 @@ module UART_Rx(input wire RX_IN,
     stop_check U6_Stop(
     .data_in(sampler_output),
     .enable(stop_check_en),
-    .load(stop_check_load),
+    .clock(CLK),
     .reset(RST),
     .stop_error(STP_ERR));
     

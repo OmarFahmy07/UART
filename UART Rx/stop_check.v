@@ -1,20 +1,20 @@
 module stop_check(input wire data_in,
                   input wire enable,
-                  input wire load,
+                  input wire clock,
                   input wire reset,
                   output reg stop_error);
     
-    reg temp_reg;
+    reg stop_error_comb;
     
-    always@(posedge load or negedge reset)
+    always@(posedge clock or negedge reset)
     begin
         if (!reset)
         begin
-            temp_reg <= 1'b0;
+            stop_error <= 1'b0;
         end
         else
         begin
-            temp_reg <= data_in;
+            stop_error <= stop_error_comb;
         end
     end
     
@@ -22,11 +22,11 @@ module stop_check(input wire data_in,
     begin
         if (enable)
         begin
-            stop_error = temp_reg ? 1'b0 : 1'b1;
+            stop_error_comb = !data_in;
         end
         else
         begin
-            stop_error = 1'b0;
+            stop_error_comb = stop_error;
         end
     end
 endmodule
